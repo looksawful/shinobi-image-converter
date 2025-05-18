@@ -1,0 +1,4 @@
+node_modules
+dist
+.env
+DESIGN_SYSTEM.md
