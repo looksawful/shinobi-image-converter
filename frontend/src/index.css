@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes shimmer {
+  0% {
+    background-position: -400px 0
+  }
+
+  100% {
+    background-position: 400px 0
+  }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #e5e5e5 0%, #f3f3f3 40%, #e5e5e5 80%);
+  background-size: 800px 100%;
+  animation: shimmer 1.2s infinite linear;
+}
+
+.dark .skeleton {
+  background: linear-gradient(90deg, #444 0%, #555 40%, #444 80%);
+}
+
+.MuiIconButton-root {
+  transition: all .2s ease;
+}
