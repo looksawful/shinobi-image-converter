@@ -9,4 +9,7 @@ export default defineConfig({
 			'cropperjs/dist/cropper.css': path.resolve(__dirname, 'node_modules/cropperjs/dist/cropper.css'),
 		},
 	},
+	build: {
+		outDir: '../docs',
+	},
 });
