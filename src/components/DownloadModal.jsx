@@ -1,13 +1,29 @@
-import { Dialog, DialogTitle, DialogContent, List, ListItem, ListItemAvatar, Avatar, ListItemText, IconButton, Button, Typography } from '@mui/material';
+// frontend/src/components/DownloadModal.jsx
+import React from 'react';
+import { Dialog, DialogTitle, DialogContent, List, ListItem, ListItemAvatar, Avatar, ListItemText, IconButton, Button, Typography, Stack } from '@mui/material';
 import { Download } from '@mui/icons-material';
 import useStore from '../store';
-import { downloadSingle, downloadZip } from '../utils/converters';
+import { downloadSingle, downloadZip, compress } from '../utils/converters';
 
 export default function DownloadModal() {
 	const open = useStore((s) => s.downloadModalOpen);
 	const close = () => useStore.setState({ downloadModalOpen: false });
-	const { items, selected, global } = useStore();
-	const list = items.filter((i) => selected.has(i.id));
+	const { items, selected, global } = useStore.getState();
+	const targets = selected.size ? items.filter((i) => selected.has(i.id)) : items;
+
+	const handleDownloadAllFormats = async () => {
+		const formats = ['png', 'jpeg', 'webp'];
+		const entries = [];
+		for (const i of targets) {
+			for (const fmt of formats) {
+				const q = i.q ?? global.q;
+				const { blob } = await compress(i.file, fmt, q);
+				const base = (i.customName || i.name).replace(/\.[^/.]+$/, '');
+				entries.push({ blob, name: `${base}.${fmt}` });
+			}
+		}
+		downloadZip(entries);
+	};
 
 	return (
 		<Dialog
@@ -15,44 +31,69 @@ export default function DownloadModal() {
 			onClose={close}
 			fullWidth
 			maxWidth='sm'>
-			<DialogTitle>Скачать выделенные</DialogTitle>
+			<DialogTitle>Скачать</DialogTitle>
 			<DialogContent>
-				{list.length ? (
+				{targets.length ? (
 					<>
 						<List>
-							{list.map((i) => (
-								<ListItem
-									key={i.id}
-									secondaryAction={
-										<IconButton onClick={() => downloadSingle(i.blob ?? i.url, i.name, `image/${global.fmt}`, global.q)}>
-											<Download />
-										</IconButton>
-									}>
-									<ListItemAvatar>
-										<Avatar src={i.urlC ?? i.url} />
-									</ListItemAvatar>
-									<ListItemText
-										primary={i.name}
-										secondary={`${(i.sizeO / 1024).toFixed(1)} KB → ${i.sizeC ? (i.sizeC / 1024).toFixed(1) + ' KB' : '—'}`}
-									/>
-								</ListItem>
-							))}
+							{targets.map((i) => {
+								const name = i.customName || i.name;
+								return (
+									<ListItem
+										key={i.id}
+										secondaryAction={
+											<IconButton
+												onClick={async () => {
+													const fmt = i.fmt;
+													const q = i.q ?? global.q;
+													const { blob } = await compress(i.file, fmt, q);
+													downloadSingle(blob, `${name.replace(/\.[^/.]+$/, '')}.${fmt}`);
+												}}>
+												<Download />
+											</IconButton>
+										}>
+										<ListItemAvatar>
+											<Avatar src={i.urlC ?? i.url} />
+										</ListItemAvatar>
+										<ListItemText
+											primary={name}
+											secondary={`${((i.sizeO ?? 0) / 1024).toFixed(1)} KB → ${((i.sizeC ?? i.sizeO ?? 0) / 1024).toFixed(1)} KB`}
+										/>
+									</ListItem>
+								);
+							})}
 						</List>
-						<Button
-							fullWidth
-							variant='contained'
-							onClick={() =>
-								downloadZip(
-									list.map((i) => ({ blob: i.blob ?? i.file, name: i.name })),
-									global.fmt,
-									global.q,
-								)
-							}>
-							Скачать все ZIP
-						</Button>
+						<Stack
+							spacing={1}
+							mt={2}>
+							<Button
+								variant='contained'
+								fullWidth
+								onClick={async () => {
+									const arr = [];
+									for (const i of targets) {
+										const fmt = i.fmt;
+										const q = i.q ?? global.q;
+										const { blob } = await compress(i.file, fmt, q);
+										arr.push({
+											blob,
+											name: `${(i.customName || i.name).replace(/\.[^/.]+$/, '')}.${fmt}`,
+										});
+									}
+									downloadZip(arr);
+								}}>
+								Скачать ZIP
+							</Button>
+							<Button
+								variant='outlined'
+								fullWidth
+								onClick={handleDownloadAllFormats}>
+								Скачать в трёх форматах
+							</Button>
+						</Stack>
 					</>
 				) : (
-					<Typography>Нет выделенных файлов</Typography>
+					<Typography>Нет файлов для скачивания</Typography>
 				)}
 			</DialogContent>
 		</Dialog>
