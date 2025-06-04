@@ -1,27 +1,27 @@
-import { Drawer, Box, Typography, IconButton } from '@mui/material';
-import Close from '@mui/icons-material/Close';
-import useStore from '../store';
-function HelpDrawer() {
-	const open = useStore((s) => s.helpOpen);
-	return (
-		<Drawer
-			anchor='right'
-			open={open}
-			onClose={() => useStore.setState({ helpOpen: false })}>
-			<Box sx={{ width: 320, p: 3 }}>
-				<Box className='flex justify-between items-center mb-4'>
-					<Typography variant='h6'>Справка</Typography>
-					<IconButton onClick={() => useStore.setState({ helpOpen: false })}>
-						<Close />
-					</IconButton>
-				</Box>
-				<Typography
-					variant='body2'
-					paragraph>
-					Загрузите изображения Drag & Drop или через диалог, выделяйте кликом, редактируйте двойным кликом, скачивайте выделенные кнопкой вверху.
-				</Typography>
-			</Box>
-		</Drawer>
-	);
+import { Drawer,Box,Typography,IconButton,List,ListItem,ListItemText,Divider } from '@mui/material'
+import HelpOutline from '@mui/icons-material/HelpOutline'
+import Close from '@mui/icons-material/Close'
+import useStore from '../store'
+
+export default function HelpDrawer(){
+  const open=useStore(s=>s.helpOpen)
+  const setHelp=useStore(s=>s.setHelp)
+  return(
+    <Drawer anchor='right' open={open} onClose={()=>setHelp(false)}>
+      <Box sx={{width:360,p:3}}>
+        <Box sx={{display:'flex',alignItems:'center',mb:2}}>
+          <HelpOutline/>
+          <Typography variant='h6' sx={{ml:1}}>Справка</Typography>
+          <IconButton sx={{ml:'auto'}} onClick={()=>setHelp(false)}><Close/></IconButton>
+        </Box>
+        <Typography variant='body2' mb={2}>
+          Загрузите файлы, выделите, редактируйте, скачайте через диалог.
+        </Typography>
+        <Divider sx={{mb:1}}/>
+        <List dense>
+          {['U — загрузить файлы','E — открыть редактор','S — диалог скачивания','H — открыть справку','D — смена темы'].map(txt=><ListItem key={txt}><ListItemText primary={txt}/></ListItem>)}
+        </List>
+      </Box>
+    </Drawer>
+  )
 }
-export default HelpDrawer;

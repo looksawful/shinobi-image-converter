@@ -1,156 +1,156 @@
-import { create } from 'zustand';
-import { v4 as uuid } from 'uuid';
-import { saveFile, removeFile, clearDB, loadAll } from './utils/db';
-import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
-import { compress } from './utils/converters';
+import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
+import { v4 as uuid } from 'uuid'
 
-const useStore = create((set, get) => ({
-	// state
-	items: [],
-	selected: new Set(),
-	dark: false,
-	helpOpen: false,
-	downloadModalOpen: false,
-	modalOpen: false,
-	currentId: null,
-	global: { fmt: 'jpeg', q: 0.8 },
-	snackbar: { open: false, message: '', severity: 'info' },
+const base = {
+  dark: false,
+  helpOpen: false,
+  welcomeOpen: true,
+  downloadOpen: false,
+  modalOpen: false,
+  currentId: null,
+  viewMode: 'grid',
+  snackbar: null,
+  items: [],
+  selected: new Set(),
+  downloadOpts: { zip: false, includeOriginal: false },
+  tasks: []
+}
 
-	// per-item settings update
-	updateSettings: (id, data) =>
-		set(({ items }) => ({
-			items: items.map((i) => (i.id === id ? { ...i, ...data } : i)),
-		})),
+const api = (set, get) => ({
+  toggleDark() {
+    set(s => ({ dark: !s.dark }))
+  },
+  setHelp(v) {
+    set({ helpOpen: v })
+  },
+  setWelcome(v) {
+    set({ welcomeOpen: v })
+  },
+  openDownload(v) {
+    set({ downloadOpen: v })
+  },
+  openEditor(id) {
+    set({ modalOpen: true, currentId: id })
+  },
+  closeEditor() {
+    set({ modalOpen: false, currentId: null })
+  },
+  setViewMode(m) {
+    set({ viewMode: m })
+  },
+  setDownloadOpt(k, v) {
+    set(s => ({ downloadOpts: { ...s.downloadOpts, [k]: v } }))
+  },
+  showSnackbar(sn) {
+    set({ snackbar: sn })
+    setTimeout(() => set({ snackbar: null }), 4000)
+  },
 
-	// download (with nested paths support)
-	downloadPhoto: async (id) => {
-		const it = get().items.find((i) => i.id === id);
-		let blob = it.blob;
-		if (!blob) {
-			const { blob: b } = await compress(it.file, it.fmt, it.q);
-			blob = b;
-		}
-		const name = it.customName || it.name;
-		if (name.includes('/')) {
-			const zip = new JSZip();
-			zip.file(name, blob);
-			const z = await zip.generateAsync({ type: 'blob' });
-			saveAs(z, 'images.zip');
-		} else {
-			saveAs(blob, name);
-		}
-	},
+  /* 1. Selection actions */
+  toggleSelect(id) {
+    set(s => {
+      const sel = new Set(s.selected)
+      sel.has(id) ? sel.delete(id) : sel.add(id)
+      return { selected: sel }
+    })
+  },
+  selectAll() {
+    set(s => ({ selected: new Set(s.items.map(i => i.id)) }))
+  },
+  clearSelection() {
+    set({ selected: new Set() })
+  },
 
-	// add new files (persist to IndexedDB)
-	addFiles: (files) => {
-		const { fmt, q } = get().global;
-		const mapped = files.map((f) => {
-			const id = uuid();
-			saveFile(id, f);
-			return {
-				id,
-				file: f,
-				url: URL.createObjectURL(f),
-				sizeO: f.size,
-				fmt,
-				q,
-				name: f.name,
-				customName: f.name,
-				sizeC: null,
-				blob: null,
-				urlC: null,
-			};
-		});
-		set(({ items }) => ({
-			items: [...items, ...mapped],
-			snackbar: { open: true, message: 'Файлы загружены', severity: 'success' },
-		}));
-	},
+  /* 2. Item actions */
+  addFiles(files) {
+    const list = files.map(f => ({
+      id: uuid(),
+      name: f.name,
+      customName: f.name.replace(/\.[^.]+$/, ''),
+      url: URL.createObjectURL(f),
+      urlC: null,
+      sizeO: f.size,
+      formats: ['webp'],
+      q: 100,
+      previewOff: false
+    }))
+    set(s => ({
+      items: [...s.items, ...list],
+      selected: new Set([...s.selected, ...list.map(i => i.id)])
+    }))
+  },
+  removeItem(id) {
+    set(s => ({
+      items: s.items.filter(i => i.id !== id),
+      selected: new Set([...s.selected].filter(x => x !== id))
+    }))
+  },
+  updateItem(id, patch) {
+    set(s => ({
+      items: s.items.map(i => (i.id === id ? { ...i, ...patch } : i))
+    }))
+  },
 
-	// update existing item (e.g. after crop/convert)
-	updateItem: (id, data) =>
-		set(({ items }) => ({
-			items: items.map((i) => (i.id === id ? { ...i, ...data } : i)),
-		})),
+  /* 3. Bulk delete actions */
+  clearAll() {
+    set({ items: [], selected: new Set() })
+  },
+  removeSelected() {
+    set(s => {
+      const kept = s.items.filter(i => !s.selected.has(i.id))
+      return { items: kept, selected: new Set() }
+    })
+  },
+  removeUnselected() {
+    set(s => {
+      const kept = s.items.filter(i => s.selected.has(i.id))
+      return { items: kept, selected: new Set(kept.map(i => i.id)) }
+    })
+  },
 
-	// remove single file (and from IndexedDB)
-	removeItem: (id) => {
-		removeFile(id);
-		set(({ items, selected }) => {
-			const sel = new Set(selected);
-			sel.delete(id);
-			return {
-				items: items.filter((i) => i.id !== id),
-				selected: sel,
-				snackbar: { open: true, message: 'Файл удалён', severity: 'info' },
-			};
-		});
-	},
+  /* 4. Tasks for progress center */
+  addTask(label) {
+    const id = uuid()
+    set(s => ({ tasks: [...s.tasks, { id, label, value: 0, speed: 0 }] }))
+    return id
+  },
+  updateTask(id, value, speed) {
+    set(s => ({
+      tasks: s.tasks.map(t =>
+        t.id === id ? { ...t, value, speed } : t
+      )
+    }))
+  },
+  finishTask(id) {
+    set(s => ({ tasks: s.tasks.filter(t => t.id !== id) }))
+  }
+})
 
-	// clear all files
-	clearAll: () => {
-		clearDB();
-		set(() => ({
-			items: [],
-			selected: new Set(),
-			snackbar: { open: true, message: 'Все файлы удалены', severity: 'info' },
-		}));
-	},
-
-	// selection
-	toggleSelect: (id) =>
-		set(({ selected }) => {
-			const sel = new Set(selected);
-			selected.has(id) ? sel.delete(id) : sel.add(id);
-			return { selected: sel };
-		}),
-	selectAll: () => set(({ items }) => ({ selected: new Set(items.map((i) => i.id)) })),
-	clearSelection: () => set({ selected: new Set() }),
-
-	// UI
-	toggleDark: () => set(({ dark }) => ({ dark: !dark })),
-	openEditor: (id) => set({ currentId: id, modalOpen: true }),
-	closeEditor: () => set({ modalOpen: false }),
-	openDownloadModal: () => set({ downloadModalOpen: true }),
-	closeDownloadModal: () => set({ downloadModalOpen: false }),
-	showSnackbar: ({ message, severity = 'info' }) => set(({ snackbar }) => ({ snackbar: { ...snackbar, open: true, message, severity } })),
-	closeSnackbar: () => set(({ snackbar }) => ({ snackbar: { ...snackbar, open: false } })),
-
-	// bulk convert
-	convertSelected: async () => {
-		const { items, selected, global, showSnackbar } = get();
-		try {
-			for (const id of selected) {
-				const it = items.find((x) => x.id === id);
-				const { blob, size } = await compress(it.file, global.fmt, global.q);
-				get().updateItem(id, { blob, sizeC: size, urlC: URL.createObjectURL(blob) });
-			}
-			showSnackbar({ message: 'Конвертация завершена', severity: 'success' });
-		} catch (e) {
-			showSnackbar({ message: `Ошибка: ${e.message}`, severity: 'error' });
-		}
-	},
-}));
-
-// on startup, load persisted files
-loadAll().then((pairs) => {
-	const loaded = pairs.map(([id, f]) => ({
-		id,
-		file: f,
-		url: URL.createObjectURL(f),
-		sizeO: f.size,
-		fmt: useStore.getState().global.fmt,
-		q: useStore.getState().global.q,
-		name: f.name,
-		customName: f.name,
-		sizeC: null,
-		blob: null,
-		urlC: null,
-	}));
-	if (loaded.length) {
-		useStore.setState({ items: loaded });
-	}
-});
-
-export default useStore;
+export default create(
+  persist(
+    (...a) => ({ ...base, ...api(...a) }),
+    {
+      name: 'shinobi-storage',
+      version: 3,
+      storage: createJSONStorage(() => localStorage),
+      partialize: s => {
+        let arr
+        if (s.selected instanceof Set) arr = [...s.selected]
+        else if (Array.isArray(s.selected)) arr = s.selected
+        else if (s.selected && typeof s.selected === 'object')
+          arr = Object.values(s.selected)
+        else arr = []
+        return { ...s, selected: arr }
+      },
+      merge: (persisted, current) => {
+        if (persisted?.selected && !(persisted.selected instanceof Set)) {
+          persisted.selected = Array.isArray(persisted.selected)
+            ? new Set(persisted.selected)
+            : new Set(Object.values(persisted.selected))
+        }
+        return { ...current, ...persisted }
+      }
+    }
+  )
+)
